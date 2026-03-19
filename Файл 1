@@ -14,7 +14,7 @@ DEEPSEEK_API_KEY = os.getenv sk-897c3a70a43d41fea79b87359b9b55b6
 # DeepSeek API endpoint
 DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
 
-bot = telebot.TeleBot(BOT_TOKEN)
+bot = telebot.TeleBot 8744141615:AAGOM6TIiyiPrHGreIAZ_4_jvk69AUiSuZk
 
 # --- База данных (SQLite) ---
 def init_db():

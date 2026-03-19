@@ -1,0 +1,193 @@
+import telebot
+import sqlite3
+import json
+import random
+import os
+
+# --- НАСТРОЙКА ---
+# Токен мы будем передавать через переменные окружения на Bothost
+TOKEN = os.getenv('BOT_TOKEN')  # Не вставляйте токен сюда!
+# ----------------
+
+bot = telebot.TeleBot(TOKEN)
+
+# --- База данных (SQLite) ---
+def init_db():
+    conn = sqlite3.connect('users.db')
+    cur = conn.cursor()
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            user_id INTEGER PRIMARY KEY,
+            age INTEGER,
+            weight REAL,
+            height REAL,
+            activity TEXT,
+            goal TEXT
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+init_db()
+
+# --- Функция расчета КБЖУ ---
+def calculate_kbju(weight, height, age, activity, goal):
+    # Упрощенная формула (Миффлин-Сан Жеор для мужчин, для примера)
+    bmr = (10 * weight) + (6.25 * height) - (5 * age) + 5
+
+    activity_coeff = {
+        'low': 1.2,
+        'medium': 1.55,
+        'high': 1.725
+    }.get(activity, 1.2)
+
+    tdee = bmr * activity_coeff
+
+    goal_coeff = {
+        'weight_loss': 0.85,
+        'maintenance': 1.0,
+        'muscle_gain': 1.1
+    }.get(goal, 1.0)
+
+    calories = round(tdee * goal_coeff)
+    protein = round((calories * 0.3) / 4)
+    fat = round((calories * 0.25) / 9)
+    carbs = round((calories * 0.45) / 4)
+
+    return calories, protein, fat, carbs
+
+# --- Библиотека рецептов (наша "база ИИ" на первое время) ---
+RECIPES = [
+    {
+        "name": "Курица с гречкой и овощами",
+        "ingredients": "Куриное филе — 150 г\nГречка (вареная) — 150 г\nПомидор — 1 шт.\nОгурец — 1 шт.\nОливковое масло — 1 ч.л.",
+        "recipe": "Куриное филе отварить или запечь. Гречку отварить. Овощи нарезать, смешать с маслом. Подавать курицу с гречкой и овощами.",
+        "kbju": "520 ккал, Б: 40г, Ж: 12г, У: 55г"
+    },
+    {
+        "name": "Рыба с картофелем и салатом",
+        "ingredients": "Филе белой рыбы (треска/хек) — 200 г\nКартофель отварной — 200 г\nЛистья салата — 50 г\nОгурец — 1 шт.\nСметана 10% — 30 г",
+        "recipe": "Рыбу приготовить на пару или запечь. Картофель отварить. Овощи нарезать, заправить сметаной.",
+        "kbju": "490 ккал, Б: 35г, Ж: 10г, У: 60г"
+    },
+    {
+        "name": "Овсяноблин с творогом и ягодами (завтрак)",
+        "ingredients": "Яйцо — 2 шт.\nОвсяные хлопья — 40 г\nМолоко — 30 мл\nТворог 5% — 100 г\nЯгоды (замороженные) — 50 г",
+        "recipe": "Смешать яйца, хлопья и молоко, испечь блин на сухой сковороде. Выложить на половину блина творог и ягоды, накрыть второй половиной.",
+        "kbju": "580 ккал, Б: 38г, Ж: 20г, У: 50г"
+    },
+    {
+        "name": "Индейка с киноа и шпинатом",
+        "ingredients": "Филе индейки — 180 г\nКиноа (вареная) — 150 г\nСвежий шпинат — 50 г\nЧерри — 5 шт.\nОливковое масло — 1 ч.л.",
+        "recipe": "Индейку нарезать и обжарить на сухой сковороде. Киноа отварить. Шпинат и помидоры нарезать, смешать с маслом. Подавать всё вместе.",
+        "kbju": "540 ккал, Б: 45г, Ж: 12г, У: 58г"
+    },
+    {
+        "name": "Творожная запеканка (перекус)",
+        "ingredients": "Творог 5% — 200 г\nЯйцо — 1 шт.\nМанка — 20 г\nСахарозаменитель — по вкусу\nЯблоко — 1 шт.",
+        "recipe": "Смешать творог, яйцо, манку и сахарозаменитель. Яблоко натереть и добавить в массу. Выложить в форму и запекать 30 минут при 180°C.",
+        "kbju": "410 ккал, Б: 35г, Ж: 12г, У: 40г"
+    }
+]
+
+# --- Команды бота ---
+@bot.message_handler(commands=['start'])
+def start(message):
+    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.add('📝 Заполнить анкету', '🍽 Рецепт на сегодня', '📊 Моя норма')
+    bot.send_message(message.chat.id, "Привет! Я помогу тебе с питанием для спорта. Начнем с анкеты? Нажми кнопку ниже.", reply_markup=markup)
+
+@bot.message_handler(func=lambda message: message.text == '📝 Заполнить анкету')
+def ask_age(message):
+    msg = bot.send_message(message.chat.id, "Сколько тебе лет?")
+    bot.register_next_step_handler(msg, ask_weight)
+
+def ask_weight(message):
+    if not message.text.isdigit():
+        msg = bot.send_message(message.chat.id, "Пожалуйста, введи число (возраст).")
+        bot.register_next_step_handler(msg, ask_weight)
+        return
+    user_data = {'age': int(message.text)}
+    bot.register_next_step_handler(bot.send_message(message.chat.id, "Твой вес (в кг)?"), ask_height, user_data)
+
+def ask_height(message, user_data):
+    try:
+        user_data['weight'] = float(message.text.replace(',', '.'))
+        bot.register_next_step_handler(bot.send_message(message.chat.id, "Твой рост (в см)?"), ask_activity, user_data)
+    except:
+        msg = bot.send_message(message.chat.id, "Введи вес числом (например 75.5).")
+        bot.register_next_step_handler(msg, ask_height, user_data)
+
+def ask_activity(message, user_data):
+    try:
+        user_data['height'] = float(message.text.replace(',', '.'))
+        markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+        markup.add('Низкая (офис)', 'Средняя (тренировки 3 раза)', 'Высокая (спортсмен)')
+        msg = bot.send_message(message.chat.id, "Твой уровень активности?", reply_markup=markup)
+        bot.register_next_step_handler(msg, ask_goal, user_data)
+    except:
+        msg = bot.send_message(message.chat.id, "Введи рост числом (например 175).")
+        bot.register_next_step_handler(msg, ask_activity, user_data)
+
+def ask_goal(message, user_data):
+    activity_map = {'Низкая (офис)': 'low', 'Средняя (тренировки 3 раза)': 'medium', 'Высокая (спортсмен)': 'high'}
+    user_data['activity'] = activity_map.get(message.text, 'medium')
+    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+    markup.add('Похудение', 'Поддержание формы', 'Набор массы')
+    msg = bot.send_message(message.chat.id, "Твоя цель?", reply_markup=markup)
+    bot.register_next_step_handler(msg, save_profile, user_data)
+
+def save_profile(message, user_data):
+    goal_map = {'Похудение': 'weight_loss', 'Поддержание формы': 'maintenance', 'Набор массы': 'muscle_gain'}
+    user_data['goal'] = goal_map.get(message.text, 'maintenance')
+
+    # Сохраняем в БД
+    conn = sqlite3.connect('users.db')
+    cur = conn.cursor()
+    cur.execute('INSERT OR REPLACE INTO users (user_id, age, weight, height, activity, goal) VALUES (?, ?, ?, ?, ?, ?)',
+                (message.chat.id, user_data['age'], user_data['weight'], user_data['height'], user_data['activity'], user_data['goal']))
+    conn.commit()
+    conn.close()
+
+    bot.send_message(message.chat.id, "✅ Анкета сохранена! Теперь я знаю твои параметры.")
+
+@bot.message_handler(func=lambda message: message.text == '📊 Моя норма')
+def show_norm(message):
+    conn = sqlite3.connect('users.db')
+    cur = conn.cursor()
+    cur.execute('SELECT age, weight, height, activity, goal FROM users WHERE user_id = ?', (message.chat.id,))
+    data = cur.fetchone()
+    conn.close()
+
+    if data:
+        age, weight, height, activity, goal = data
+        calories, protein, fat, carbs = calculate_kbju(weight, height, age, activity, goal)
+        bot.send_message(message.chat.id, f"📊 *Твоя дневная норма:*\n🔥 Калории: {calories} ккал\n🥩 Белки: {protein} г\n🥑 Жиры: {fat} г\n🍚 Углеводы: {carbs} г", parse_mode='Markdown')
+    else:
+        bot.send_message(message.chat.id, "Сначала заполни анкету, нажми '📝 Заполнить анкету'.")
+
+@bot.message_handler(func=lambda message: message.text == '🍽 Рецепт на сегодня')
+def send_recipe(message):
+    # Проверяем, есть ли профиль
+    conn = sqlite3.connect('users.db')
+    cur = conn.cursor()
+    cur.execute('SELECT user_id FROM users WHERE user_id = ?', (message.chat.id,))
+    user_exists = cur.fetchone()
+    conn.close()
+    
+    if not user_exists:
+        bot.send_message(message.chat.id, "Сначала заполни анкету, нажми '📝 Заполнить анкету'.")
+        return
+    
+    recipe = random.choice(RECIPES)
+    text = f"🍽 *{recipe['name']}*\n\n*Ингредиенты:*\n{recipe['ingredients']}\n\n*Приготовление:*\n{recipe['recipe']}\n\n*КБЖУ:* {recipe['kbju']}"
+    bot.send_message(message.chat.id, text, parse_mode='Markdown')
+
+@bot.message_handler(func=lambda message: True)
+def echo_all(message):
+    bot.send_message(message.chat.id, "Используй кнопки меню для навигации.")
+
+# --- Запуск бота ---
+if __name__ == '__main__':
+    print("Бот запущен...")
+    bot.infinity_polling()

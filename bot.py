@@ -6,7 +6,6 @@ import requests
 from datetime import datetime
 
 # --- НАСТРОЙКА ---
-# ВАШ ТОКЕН (ВСТАВЛЕН НАПРЯМУЮ)
 BOT_TOKEN = "8744141615:AAGOM6TIiyiPrHGreIAZ_4_jvk69AUiSuZk"
 # API-ключ DeepSeek (нужно получить на platform.deepseek.com)
 DEEPSEEK_API_KEY = os.getenv('DEEPSEEK_API_KEY')  # DeepSeek ключ лучше оставить в переменных окружения

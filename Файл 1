@@ -3,28 +3,28 @@ import sqlite3
 import json
 import os
 import requests
+import time
 from datetime import datetime
+from telebot import apihelper
 
 # --- НАСТРОЙКА ---
-# ВАШ ТОКЕН (ВСТАВЛЕН НАПРЯМУЮ) - ИСПРАВЛЕНО!
+# ВАШ ТОКЕН (ВСТАВЛЕН НАПРЯМУЮ)
 BOT_TOKEN = "8744141615:AAGOM6TIiyiPrHGreIAZ_4_jvk69AUiSuZk"
 # API-ключ DeepSeek (нужно получить на platform.deepseek.com)
 DEEPSEEK_API_KEY = os.getenv('DEEPSEEK_API_KEY')
 # ----------------
 
-# Проверяем, что токен не пустой
-if not BOT_TOKEN:
-    raise ValueError("Токен бота не может быть пустым! Проверьте настройки.")
-
-print(f"Загружаю бота с токеном: {BOT_TOKEN[:10]}...")  # Покажем первые 10 символов для проверки
+# ВАЖНО: Настройки для предотвращения ошибки 1006
+apihelper.CONNECT_TIMEOUT = 30  # Увеличиваем таймаут подключения
+apihelper.READ_TIMEOUT = 30      # Увеличиваем таймаут чтения
 
 # DeepSeek API endpoint
 DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
 
-# Создаем экземпляр бота
+# Создаем экземпляр бота с дополнительными настройками
 try:
     bot = telebot.TeleBot(BOT_TOKEN)
-    print("✅ Бот успешно инициализирован!")
+    print(f"✅ Бот успешно инициализирован с токеном: {BOT_TOKEN[:10]}...")
 except Exception as e:
     print(f"❌ Ошибка при создании бота: {e}")
     raise
@@ -449,13 +449,24 @@ def send_deepseek_recipe(message):
 def echo_all(message):
     bot.send_message(message.chat.id, "Используй кнопки меню для навигации.")
 
-# --- Запуск бота ---
+# --- ЗАПУСК БОТА С ЗАЩИТОЙ ОТ ОШИБКИ 1006 ---
 if __name__ == '__main__':
-    print("🤖 Бот запускается...")
-    try:
-        bot_info = bot.get_me()
-        print(f"✅ Бот @{bot_info.username} успешно запущен и готов к работе!")
-        bot.infinity_polling()
-    except Exception as e:
-        print(f"❌ Ошибка при запуске бота: {e}")
-        print("Проверьте токен и подключение к интернету")
+    print("🚀 Бот запускается с защитой от ошибки 1006...")
+    
+    # Бесконечный цикл с перезапуском при ошибке
+    while True:
+        try:
+            print("🔄 Попытка подключения к Telegram API...")
+            bot_info = bot.get_me()
+            print(f"✅ Бот @{bot_info.username} успешно подключен и готов к работе!")
+            print("📡 Запускаю polling (ожидание сообщений)...")
+            
+            # Используем параметры для более стабильной работы
+            bot.infinity_polling(timeout=60, long_polling_timeout=30)
+            
+        except Exception as e:
+            print(f"❌ Произошла ошибка: {e}")
+            print(f"⏱️ Жду 10 секунд перед перезапуском...")
+            time.sleep(10)
+            print("🔄 Перезапускаю бота...")
+            continue

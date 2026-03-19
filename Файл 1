@@ -7,8 +7,8 @@ from datetime import datetime
 
 # --- НАСТРОЙКА ---
 # Токены из переменных окружения
-BOT_TOKEN = os.getenv('8744141615:AAGOM6TIiyiPrHGreIAZ_4_jvk69AUiSuZk')
-DEEPSEEK_API_KEY = os.getenv('sk-897c3a70a43d41fea79b87359b9b55b6')
+BOT_TOKEN = os.getenv 8744141615:AAGOM6TIiyiPrHGreIAZ_4_jvk69AUiSuZk
+DEEPSEEK_API_KEY = os.getenv sk-897c3a70a43d41fea79b87359b9b55b6
 # ----------------
 
 # DeepSeek API endpoint

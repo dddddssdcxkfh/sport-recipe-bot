@@ -3,18 +3,31 @@ import sqlite3
 import json
 import os
 import requests
+import time
 from datetime import datetime
+from telebot import apihelper
 
 # --- НАСТРОЙКА ---
+# ВАШ ТОКЕН (ВСТАВЛЕН НАПРЯМУЮ)
 BOT_TOKEN = "8744141615:AAGOM6TIiyiPrHGreIAZ_4_jvk69AUiSuZk"
 # API-ключ DeepSeek (нужно получить на platform.deepseek.com)
-DEEPSEEK_API_KEY = os.getenv('DEEPSEEK_API_KEY')  # DeepSeek ключ лучше оставить в переменных окружения
+DEEPSEEK_API_KEY = os.getenv('DEEPSEEK_API_KEY')
 # ----------------
+
+# ВАЖНО: Настройки для предотвращения ошибки 1006
+apihelper.CONNECT_TIMEOUT = 30  # Увеличиваем таймаут подключения
+apihelper.READ_TIMEOUT = 30      # Увеличиваем таймаут чтения
 
 # DeepSeek API endpoint
 DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
 
-bot = telebot.TeleBot(BOT_TOKEN)
+# Создаем экземпляр бота с дополнительными настройками
+try:
+    bot = telebot.TeleBot(BOT_TOKEN)
+    print(f"✅ Бот успешно инициализирован с токеном: {BOT_TOKEN[:10]}...")
+except Exception as e:
+    print(f"❌ Ошибка при создании бота: {e}")
+    raise
 
 # --- База данных (SQLite) ---
 def init_db():
@@ -41,6 +54,7 @@ def init_db():
     ''')
     conn.commit()
     conn.close()
+    print("✅ База данных инициализирована")
 
 init_db()
 
@@ -160,7 +174,7 @@ def generate_deepseek_recipe(user_params, user_id):
     
     # Проверяем, есть ли ключ DeepSeek
     if not DEEPSEEK_API_KEY:
-        print("DeepSeek API ключ не найден!")
+        print("⚠️ DeepSeek API ключ не найден! Использую запасные рецепты.")
         return get_fallback_recipe()
     
     # Подготовка данных для DeepSeek API
@@ -184,7 +198,7 @@ def generate_deepseek_recipe(user_params, user_id):
     }
     
     try:
-        # Отправляем запрос к DeepSeek API
+        print(f"📡 Отправляю запрос к DeepSeek API для пользователя {user_id}")
         response = requests.post(
             DEEPSEEK_API_URL,
             headers=headers,
@@ -195,6 +209,7 @@ def generate_deepseek_recipe(user_params, user_id):
         if response.status_code == 200:
             result = response.json()
             recipe_text = result['choices'][0]['message']['content']
+            print(f"✅ Получен ответ от DeepSeek для пользователя {user_id}")
             
             # Пытаемся извлечь название рецепта для истории
             try:
@@ -202,17 +217,18 @@ def generate_deepseek_recipe(user_params, user_id):
                     if 'НАЗВАНИЕ:' in line or '🍽' in line:
                         recipe_name = line.replace('🍽', '').replace('НАЗВАНИЕ:', '').strip()
                         save_recipe_to_history(user_id, recipe_name)
+                        print(f"📝 Сохранен рецепт в историю: {recipe_name}")
                         break
-            except:
-                pass
+            except Exception as e:
+                print(f"⚠️ Не удалось сохранить историю: {e}")
             
             return recipe_text
         else:
-            print(f"DeepSeek API error: {response.status_code} - {response.text}")
+            print(f"❌ DeepSeek API error: {response.status_code} - {response.text}")
             return get_fallback_recipe()
             
     except Exception as e:
-        print(f"Exception in DeepSeek API call: {e}")
+        print(f"❌ Exception in DeepSeek API call: {e}")
         return get_fallback_recipe()
 
 # --- Запасные рецепты на случай ошибки API ---
@@ -294,15 +310,14 @@ def get_fallback_recipe():
 @bot.message_handler(commands=['start'])
 def start(message):
     markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.add('📝 Заполнить анкету', '🍽 Рецепт на сегодня (DeepSeek)', '📊 Моя норма')
+    markup.add('📝 Заполнить анкету', '🍽 Рецепт на сегодня', '📊 Моя норма')
     
     welcome_text = (
-        "🤖 *Привет! Я умный спортивный бот на базе DeepSeek AI!*\n\n"
-        "Я использую искусственный интеллект DeepSeek для создания уникальных рецептов "
-        "специально под твои параметры и цели.\n\n"
+        "🤖 *Привет! Я умный спортивный бот!*\n\n"
+        "Я помогаю спортсменам рассчитывать КБЖУ и предлагаю рецепты на каждый день.\n\n"
         "📋 *Что я умею:*\n"
         "• Рассчитывать твою дневную норму калорий\n"
-        "• Создавать уникальные рецепты с точным КБЖУ\n"
+        "• Давать рецепты с точным КБЖУ\n"
         "• Запоминать, что ты ел(а) вчера, чтобы не повторяться\n\n"
         "👇 *Начнем с анкеты?* Нажми кнопку ниже."
     )
@@ -402,7 +417,7 @@ def show_norm(message):
     else:
         bot.send_message(message.chat.id, "Сначала заполни анкету, нажми '📝 Заполнить анкету'.")
 
-@bot.message_handler(func=lambda message: message.text == '🍽 Рецепт на сегодня (DeepSeek)')
+@bot.message_handler(func=lambda message: message.text == '🍽 Рецепт на сегодня')
 def send_deepseek_recipe(message):
     # Проверяем, есть ли профиль
     conn = sqlite3.connect('users.db')
@@ -419,7 +434,7 @@ def send_deepseek_recipe(message):
     bot.send_chat_action(message.chat.id, 'typing')
     
     # Отправляем сообщение о начале генерации
-    wait_msg = bot.send_message(message.chat.id, "🧠 *DeepSeek думает...* Создаю уникальный рецепт специально для тебя! Это займет несколько секунд.", parse_mode='Markdown')
+    wait_msg = bot.send_message(message.chat.id, "🧠 *Думаю...* Создаю рецепт специально для тебя! Это займет несколько секунд.", parse_mode='Markdown')
     
     # Генерируем рецепт через DeepSeek
     recipe_text = generate_deepseek_recipe(user_data, message.chat.id)
@@ -434,8 +449,24 @@ def send_deepseek_recipe(message):
 def echo_all(message):
     bot.send_message(message.chat.id, "Используй кнопки меню для навигации.")
 
-# --- Запуск бота ---
+# --- ЗАПУСК БОТА С ЗАЩИТОЙ ОТ ОШИБКИ 1006 ---
 if __name__ == '__main__':
-    print("🤖 Бот с DeepSeek AI запущен...")
-    print(f"✅ Бот @{bot.get_me().username} готов к работе!")
-    bot.infinity_polling()
+    print("🚀 Бот запускается с защитой от ошибки 1006...")
+    
+    # Бесконечный цикл с перезапуском при ошибке
+    while True:
+        try:
+            print("🔄 Попытка подключения к Telegram API...")
+            bot_info = bot.get_me()
+            print(f"✅ Бот @{bot_info.username} успешно подключен и готов к работе!")
+            print("📡 Запускаю polling (ожидание сообщений)...")
+            
+            # Используем параметры для более стабильной работы
+            bot.infinity_polling(timeout=60, long_polling_timeout=30)
+            
+        except Exception as e:
+            print(f"❌ Произошла ошибка: {e}")
+            print(f"⏱️ Жду 10 секунд перед перезапуском...")
+            time.sleep(10)
+            print("🔄 Перезапускаю бота...")
+            continue
